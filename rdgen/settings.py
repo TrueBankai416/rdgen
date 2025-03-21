@@ -24,7 +24,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY','django-insecure-!(t-!f#6g#sr%yfded9(xh
 GHUSER = os.environ.get("GHUSER", '')
 GHBEARER = os.environ.get("GHBEARER", '')
 GENURL = os.environ.get("GENURL", '')
-PROTOCOL = os.environ.get("PROTOCOL", 'https')
+PROTOCOL = https
 REPONAME = os.environ.get("REPONAME", 'rdgen')
 
 MEDIA_URL = '/media/'
