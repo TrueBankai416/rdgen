@@ -55,6 +55,9 @@ on:
         type: string
 
 
+permissions:
+  contents: write
+
 env:
   SCITER_RUST_VERSION: "1.75" # https://github.com/rustdesk/rustdesk/discussions/7503, also 1.78 has ABI change which causes our sciter version not working, https://blog.rust-lang.org/2024/03/30/i128-layout-update.html
   RUST_VERSION: "1.75" # sciter failed on m1 with 1.78 because of https://blog.rust-lang.org/2024/03/30/i128-layout-update.html
@@ -582,6 +585,36 @@ jobs:
         shell: bash
         run: |
           curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ fromJson(inputs.extras).token }}" -F "file=@./signed-apk/${{ inputs.filename }}-${{ matrix.job.arch }}.apk" ${{ inputs.apiServer }}/api/save_custom_client
+
+      - name: Create or update custom-build release
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG="custom-build-${{ env.VERSION }}"
+          # Check if release exists
+          if gh release view "$RELEASE_TAG" --repo ${{ github.repository }} >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists"
+          else
+            echo "Creating release $RELEASE_TAG"
+            gh release create "$RELEASE_TAG" \
+              --repo ${{ github.repository }} \
+              --title "Custom Build - ${{ env.VERSION }}" \
+              --notes "Custom RustDesk builds for version ${{ env.VERSION }}. These builds are configured with custom servers, branding, and settings." \
+              --prerelease
+          fi
+
+      - name: Upload APK to GitHub Release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG="custom-build-${{ env.VERSION }}"
+          gh release upload "$RELEASE_TAG" \
+            "./signed-apk/${{ inputs.filename }}-${{ matrix.job.arch }}.apk" \
+            --repo ${{ github.repository }} \
+            --clobber
 
       - name: Report Status
         uses: fjogeleit/http-request-action@v1

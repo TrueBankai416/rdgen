@@ -54,6 +54,9 @@ on:
         default: '{}'
         type: string
 
+permissions:
+  contents: write
+
 env:
   SCITER_RUST_VERSION: "1.75" # https://github.com/rustdesk/rustdesk/discussions/7503, also 1.78 has ABI change which causes our sciter version not working, https://blog.rust-lang.org/2024/03/30/i128-layout-update.html
   RUST_VERSION: "1.75" # sciter failed on m1 with 1.78 because of https://blog.rust-lang.org/2024/03/30/i128-layout-update.html
@@ -616,6 +619,72 @@ jobs:
           curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ fromJson(inputs.extras).token }}" -F "file=@./output/${{ inputs.filename }}-suse-${{ matrix.job.arch }}.rpm" ${{ inputs.apiServer }}/api/save_custom_client
           curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ fromJson(inputs.extras).token }}" -F "file=@./output/${{ inputs.filename }}-${{ matrix.job.arch }}.pkg.tar.zst" ${{ inputs.apiServer }}/api/save_custom_client || true
 
+      - name: Create or update custom-build release
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG="custom-build-${{ env.VERSION }}"
+          # Check if release exists
+          if gh release view "$RELEASE_TAG" --repo ${{ github.repository }} >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists"
+          else
+            echo "Creating release $RELEASE_TAG"
+            gh release create "$RELEASE_TAG" \
+              --repo ${{ github.repository }} \
+              --title "Custom Build - ${{ env.VERSION }}" \
+              --notes "Custom RustDesk builds for version ${{ env.VERSION }}. These builds are configured with custom servers, branding, and settings." \
+              --prerelease
+          fi
+
+      - name: Upload deb to GitHub Release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG="custom-build-${{ env.VERSION }}"
+          gh release upload "$RELEASE_TAG" \
+            "./output/${{ inputs.filename }}-${{ matrix.job.arch }}.deb" \
+            --repo ${{ github.repository }} \
+            --clobber
+
+      - name: Upload rpm to GitHub Release
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG="custom-build-${{ env.VERSION }}"
+          gh release upload "$RELEASE_TAG" \
+            "./output/${{ inputs.filename }}-${{ matrix.job.arch }}.rpm" \
+            --repo ${{ github.repository }} \
+            --clobber
+
+      - name: Upload suse rpm to GitHub Release
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG="custom-build-${{ env.VERSION }}"
+          gh release upload "$RELEASE_TAG" \
+            "./output/${{ inputs.filename }}-suse-${{ matrix.job.arch }}.rpm" \
+            --repo ${{ github.repository }} \
+            --clobber
+
+      - name: Upload arch package to GitHub Release
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG="custom-build-${{ env.VERSION }}"
+          gh release upload "$RELEASE_TAG" \
+            "./output/${{ inputs.filename }}-${{ matrix.job.arch }}.pkg.tar.zst" \
+            --repo ${{ github.repository }} \
+            --clobber
+
       - name: Upload deb
         uses: actions/upload-artifact@master
         if: env.UPLOAD_ARTIFACT == 'true'
@@ -711,6 +780,36 @@ jobs:
         run: |
           curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ fromJson(inputs.extras).token }}" -F "file=@./appimage/${{ inputs.filename }}-${{ matrix.job.arch }}.AppImage" ${{ inputs.apiServer }}/api/save_custom_client
 
+      - name: Create or update custom-build release
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG="custom-build-${{ env.VERSION }}"
+          # Check if release exists
+          if gh release view "$RELEASE_TAG" --repo ${{ github.repository }} >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists"
+          else
+            echo "Creating release $RELEASE_TAG"
+            gh release create "$RELEASE_TAG" \
+              --repo ${{ github.repository }} \
+              --title "Custom Build - ${{ env.VERSION }}" \
+              --notes "Custom RustDesk builds for version ${{ env.VERSION }}. These builds are configured with custom servers, branding, and settings." \
+              --prerelease
+          fi
+
+      - name: Upload AppImage to GitHub Release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG="custom-build-${{ env.VERSION }}"
+          gh release upload "$RELEASE_TAG" \
+            "./appimage/${{ inputs.filename }}-${{ matrix.job.arch }}.AppImage" \
+            --repo ${{ github.repository }} \
+            --clobber
+
   build-flatpak:
     name: Build flatpak ${{ matrix.job.target }}${{ matrix.job.suffix }}
     needs:
@@ -803,6 +902,37 @@ jobs:
         shell: bash
         run: |
           curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ fromJson(inputs.extras).token }}" -F "file=@./flatpak/${{ inputs.filename }}-${{ matrix.job.arch }}.flatpak" ${{ inputs.apiServer }}/api/save_custom_client
+
+      - name: Create or update custom-build release
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG="custom-build-${{ env.VERSION }}"
+          # Check if release exists
+          if gh release view "$RELEASE_TAG" --repo ${{ github.repository }} >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists"
+          else
+            echo "Creating release $RELEASE_TAG"
+            gh release create "$RELEASE_TAG" \
+              --repo ${{ github.repository }} \
+              --title "Custom Build - ${{ env.VERSION }}" \
+              --notes "Custom RustDesk builds for version ${{ env.VERSION }}. These builds are configured with custom servers, branding, and settings." \
+              --prerelease
+          fi
+
+      - name: Upload Flatpak to GitHub Release
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TAG="custom-build-${{ env.VERSION }}"
+          gh release upload "$RELEASE_TAG" \
+            "./flatpak/${{ inputs.filename }}-${{ matrix.job.arch }}.flatpak" \
+            --repo ${{ github.repository }} \
+            --clobber
 
 
 
