@@ -236,6 +236,20 @@ jobs:
           Invoke-WebRequest -Uri https://raw.githubusercontent.com/bryangerlach/rdgen/refs/heads/master/.github/patches/allowCustom.diff -OutFile allowCustom.diff
           git apply allowCustom.diff
 
+      - name: run as admin
+        continue-on-error: true
+        if: ${{ fromJson(inputs.extras).runasadmin == 'true' }}
+        shell: bash
+        run: |
+          sed -i '/<\/compatibility>/a \
+                <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">\
+                  <security>\
+                    <requestedPrivileges>\
+                      <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>\
+                    </requestedPrivileges>\
+                  </security>\
+                </trustInfo>' ./res/manifest.xml
+
       - name: Install LLVM and Clang
         uses: rustdesk-org/install-llvm-action-32bit@master
         with:
