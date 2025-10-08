@@ -376,36 +376,46 @@ jobs:
         if: ${{ inputs.iconlink != 'false' }}
         continue-on-error: true
         shell: pwsh
+        env:
+          ICON_JSON: ${{ inputs.iconlink }}
         run: |
-          # Backup original icons
-          $iconFiles = @(
-            "./res/icon.ico",
-            "./res/icon.png", 
-            "./res/tray-icon.ico",
-            "./res/32x32.png",
-            "./res/64x64.png",
-            "./res/128x128.png",
-            "./res/128x128@2x.png"
-          )
-          foreach ($file in $iconFiles) {
-            if (Test-Path $file) {
-              Move-Item $file "$file.bak" -Force
+          try {
+            # Parse icon configuration
+            $icon = $env:ICON_JSON | ConvertFrom-Json
+            
+            # Backup original icons
+            $iconFiles = @(
+              "./res/icon.ico",
+              "./res/icon.png", 
+              "./res/tray-icon.ico",
+              "./res/32x32.png",
+              "./res/64x64.png",
+              "./res/128x128.png",
+              "./res/128x128@2x.png"
+            )
+            foreach ($file in $iconFiles) {
+              if (Test-Path $file) {
+                Move-Item $file "$file.bak" -Force
+              }
             }
+            
+            # Download and process new icon
+            $iconUrl = "$($icon.url)/get_png?filename=$($icon.file)&uuid=$($icon.uuid)"
+            Invoke-WebRequest -Uri $iconUrl -OutFile ./res/icon.png
+            
+            # Generate all icon sizes in one go
+            magick ./res/icon.png -define icon:auto-resize=256,64,48,32,16 ./res/icon.ico
+            Copy-Item ./res/icon.ico ./res/tray-icon.ico
+            magick ./res/icon.png -resize 32x32 ./res/32x32.png
+            magick ./res/icon.png -resize 64x64 ./res/64x64.png
+            magick ./res/icon.png -resize 128x128 ./res/128x128.png
+            magick ./res/128x128.png -resize 200% ./res/128x128@2x.png
+            
+            Write-Host "✓ Custom icons processed successfully"
+          } catch {
+            Write-Host "⚠ Failed to process custom icons: $_"
+            throw
           }
-          
-          # Download and process new icon
-          $iconUrl = "${{ fromJson(inputs.iconlink).url }}/get_png?filename=${{ fromJson(inputs.iconlink).file }}&uuid=${{ fromJson(inputs.iconlink).uuid }}"
-          Invoke-WebRequest -Uri $iconUrl -OutFile ./res/icon.png
-          
-          # Generate all icon sizes in one go
-          magick ./res/icon.png -define icon:auto-resize=256,64,48,32,16 ./res/icon.ico
-          Copy-Item ./res/icon.ico ./res/tray-icon.ico
-          magick ./res/icon.png -resize 32x32 ./res/32x32.png
-          magick ./res/icon.png -resize 64x64 ./res/64x64.png
-          magick ./res/icon.png -resize 128x128 ./res/128x128.png
-          magick ./res/128x128.png -resize 200% ./res/128x128@2x.png
-          
-          Write-Host "✓ Custom icons processed successfully"
 
 
       - name: ui.rs icon
@@ -517,27 +527,46 @@ jobs:
 
       - name: Process Flutter assets (icons and logos)
         shell: pwsh
+        env:
+          ICON_JSON: ${{ inputs.iconlink }}
+          LOGO_JSON: ${{ inputs.logolink }}
         run: |
           # Process custom icon
-          if ("${{ inputs.iconlink }}" -ne "false" -and (Test-Path ./res/icon.png)) {
-            # Ensure target directory exists
-            $targetDir = "./rustdesk/data/flutter_assets/assets"
-            if (-not (Test-Path $targetDir)) {
-              New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+          if ($env:ICON_JSON -and $env:ICON_JSON -ne "false") {
+            if (Test-Path ./res/icon.png) {
+              try {
+                # Ensure target directory exists
+                $targetDir = "./rustdesk/data/flutter_assets/assets"
+                if (-not (Test-Path $targetDir)) {
+                  New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+                }
+                
+                if (Test-Path "$targetDir/icon.svg") {
+                  Move-Item "$targetDir/icon.svg" "$targetDir/icon.svg.bak" -Force
+                }
+                magick ./res/icon.png "$targetDir/icon.svg"
+                Write-Host "✓ Custom icon processed for Flutter assets"
+              } catch {
+                Write-Host "⚠ Failed to process custom icon: $_"
+              }
+            } else {
+              Write-Host "⚠ Icon file not found at ./res/icon.png"
             }
-            
-            if (Test-Path "$targetDir/icon.svg") {
-              Move-Item "$targetDir/icon.svg" "$targetDir/icon.svg.bak" -Force
-            }
-            magick ./res/icon.png "$targetDir/icon.svg"
-            Write-Host "✓ Custom icon processed for Flutter assets"
           }
           
           # Process custom logo
-          if ("${{ inputs.logolink }}" -ne "false") {
+          if ($env:LOGO_JSON -and $env:LOGO_JSON -ne "false") {
             try {
-              $logoUrl = "${{ fromJson(inputs.logolink).url }}/get_png?filename=${{ fromJson(inputs.logolink).file }}&uuid=${{ fromJson(inputs.logolink).uuid }}"
-              Invoke-WebRequest -Uri $logoUrl -OutFile ./rustdesk/data/flutter_assets/assets/logo.png
+              $logo = $env:LOGO_JSON | ConvertFrom-Json
+              $logoUrl = "$($logo.url)/get_png?filename=$($logo.file)&uuid=$($logo.uuid)"
+              
+              # Ensure target directory exists
+              $targetDir = "./rustdesk/data/flutter_assets/assets"
+              if (-not (Test-Path $targetDir)) {
+                New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+              }
+              
+              Invoke-WebRequest -Uri $logoUrl -OutFile "$targetDir/logo.png"
               Write-Host "✓ Custom logo downloaded"
             } catch {
               Write-Host "⚠ Failed to download custom logo: $_"
