@@ -244,8 +244,8 @@ jobs:
           $manifestPath = "./res/manifest.xml"
           [xml]$manifest = Get-Content -Raw $manifestPath
           
-          # Only add trustInfo if it doesn't already exist
-          if (-not $manifest.assembly.trustInfo) {
+          # Only add trustInfo if it doesn't already exist (use XPath for namespace-safe check)
+          if (-not $manifest.SelectSingleNode("/*[local-name()='assembly']/*[local-name()='trustInfo']")) {
             # Create trustInfo element with proper namespace
             $ns = "urn:schemas-microsoft-com:asm.v2"
             $trustInfo = $manifest.CreateElement("trustInfo", $ns)
@@ -260,12 +260,13 @@ jobs:
             $security.AppendChild($requestedPrivileges) | Out-Null
             $trustInfo.AppendChild($security) | Out-Null
             
-            # Insert after compatibility element
-            $compatibility = $manifest.assembly.compatibility
+            # Insert after compatibility element (use XPath for namespace-safe selection)
+            $assembly = $manifest.SelectSingleNode("/*[local-name()='assembly']")
+            $compatibility = $manifest.SelectSingleNode("/*[local-name()='assembly']/*[local-name()='compatibility']")
             if ($compatibility) {
-              $manifest.assembly.InsertAfter($trustInfo, $compatibility) | Out-Null
+              $assembly.InsertAfter($trustInfo, $compatibility) | Out-Null
             } else {
-              $manifest.assembly.AppendChild($trustInfo) | Out-Null
+              $assembly.AppendChild($trustInfo) | Out-Null
             }
             
             # Save with proper formatting
