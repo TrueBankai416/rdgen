@@ -489,7 +489,25 @@ jobs:
             Write-Host "Created new trustInfo with requireAdministrator"
           }
           
-          $manifest.Save($manifestPath)
+          # Save with proper formatting and encoding
+          $settings = New-Object System.Xml.XmlWriterSettings
+          $settings.Indent = $true
+          $settings.IndentChars = "  "
+          $settings.NewLineChars = "`r`n"
+          $settings.Encoding = [System.Text.Encoding]::UTF8
+          $settings.OmitXmlDeclaration = $false
+          
+          $writer = [System.Xml.XmlWriter]::Create($manifestPath, $settings)
+          try {
+            $manifest.Save($writer)
+          } finally {
+            $writer.Close()
+          }
+          
+          Write-Host "Manifest saved successfully"
+          Write-Host "=== Modified Manifest Content ==="
+          Get-Content $manifestPath | Write-Host
+          Write-Host "=== End Manifest Content ==="
 
       - name: Report Status
         uses: fjogeleit/http-request-action@v1
