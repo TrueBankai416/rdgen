@@ -224,15 +224,41 @@ jobs:
         if: fromJson(inputs.extras).compname != 'Purslane Ltd'
         continue-on-error: true
         shell: bash
+        env:
+          COMPANY: ${{ fromJson(inputs.extras).compname }}
         run: |
-          sed -i -e 's|Purslane Ltd|${{ fromJson(inputs.extras).compname }}|' ./flutter/lib/desktop/pages/desktop_setting_page.dart
-          sed -i -e 's|PURSLANE|${{ fromJson(inputs.extras).compname }}|' ./res/msi/preprocess.py
-          sed -i -e 's|Purslane Ltd|${{ fromJson(inputs.extras).compname }}|' ./res/msi/preprocess.py
-          sed -i -e 's|"Copyright © 2025 Purslane Ltd. All rights reserved."|"Copyright © 2025 ${{ fromJson(inputs.extras).compname }}. All rights reserved."|' ./flutter/windows/runner/Runner.rc
-          sed -i -e 's|Purslane Ltd|${{ fromJson(inputs.extras).compname }}|' ./flutter/windows/runner/Runner.rc
-          sed -i -e 's|Purslane Ltd|${{ fromJson(inputs.extras).compname }}|' ./Cargo.toml
-          sed -i -e 's|Purslane Ltd|${{ fromJson(inputs.extras).compname }}|' ./libs/portable/Cargo.toml
-          sed -i -e 's|Purslane Ltd.|${{ fromJson(inputs.extras).compname }}|' ./res/setup.nsi
+          # Function to safely replace text in file if it exists
+          safe_replace() {
+            local file="$1"
+            local search="$2"
+            local replace="$3"
+            
+            if [ ! -f "$file" ]; then
+              echo "⚠ Skipping $file (not found)"
+              return 0
+            fi
+            
+            # Escape special characters in replacement string for sed
+            # Escape backslashes first, then other special characters
+            local escaped="${replace//\\/\\\\}"
+            escaped="${escaped//&/\\&}"
+            escaped="${escaped//\//\\/}"
+            escaped="${escaped//|/\\|}"
+            escaped="${escaped//\"/\\\"}"
+            escaped="${escaped//\$/\\$}"
+            escaped="${escaped//\`/\\\`}"
+            
+            sed -i -e "s|$search|$escaped|g" "$file"
+            echo "✓ Updated $file"
+          }
+          
+          safe_replace "./flutter/lib/desktop/pages/desktop_setting_page.dart" "Purslane Ltd" "$COMPANY"
+          safe_replace "./res/msi/preprocess.py" "PURSLANE" "$COMPANY"
+          safe_replace "./res/msi/preprocess.py" "Purslane Ltd" "$COMPANY"
+          safe_replace "./flutter/windows/runner/Runner.rc" "Purslane Ltd" "$COMPANY"
+          safe_replace "./Cargo.toml" "Purslane Ltd" "$COMPANY"
+          safe_replace "./libs/portable/Cargo.toml" "Purslane Ltd" "$COMPANY"
+          safe_replace "./res/setup.nsi" "Purslane Ltd\\." "$COMPANY"
              
       - name: change url to custom
         if: fromJson(inputs.extras).urlLink != 'https://rustdesk.com'
