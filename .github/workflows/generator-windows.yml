@@ -619,6 +619,46 @@ jobs:
         run: |
           echo -n "${{ inputs.custom }}" | cat > ./rustdesk/custom.txt
 
+      - name: Add run as admin to portable packer manifest
+        continue-on-error: true
+        if: ${{ fromJson(inputs.extras).runasadmin == 'true' }}
+        shell: pwsh
+        run: |
+          $manifestPath = "res/manifest.xml"
+          [xml]$manifest = Get-Content -Raw $manifestPath
+          
+          # Only add trustInfo if it doesn't already exist (use XPath for namespace-safe check)
+          if (-not $manifest.SelectSingleNode("/*[local-name()='assembly']/*[local-name()='trustInfo']")) {
+            # Create trustInfo element with proper namespace
+            $ns = "urn:schemas-microsoft-com:asm.v2"
+            $trustInfo = $manifest.CreateElement("trustInfo", $ns)
+            $security = $manifest.CreateElement("security", $ns)
+            $requestedPrivileges = $manifest.CreateElement("requestedPrivileges", $ns)
+            $requestedExecutionLevel = $manifest.CreateElement("requestedExecutionLevel", $ns)
+            $requestedExecutionLevel.SetAttribute("level", "requireAdministrator")
+            $requestedExecutionLevel.SetAttribute("uiAccess", "false")
+            
+            # Build the hierarchy
+            $requestedPrivileges.AppendChild($requestedExecutionLevel) | Out-Null
+            $security.AppendChild($requestedPrivileges) | Out-Null
+            $trustInfo.AppendChild($security) | Out-Null
+            
+            # Insert after compatibility element (use XPath for namespace-safe selection)
+            $assembly = $manifest.SelectSingleNode("/*[local-name()='assembly']")
+            $compatibility = $manifest.SelectSingleNode("/*[local-name()='assembly']/*[local-name()='compatibility']")
+            if ($compatibility) {
+              $assembly.InsertAfter($trustInfo, $compatibility) | Out-Null
+            } else {
+              $assembly.AppendChild($trustInfo) | Out-Null
+            }
+            
+            # Save with proper formatting
+            $manifest.Save($manifestPath)
+            Write-Host "Added trustInfo to portable packer manifest"
+          } else {
+            Write-Host "trustInfo already exists in portable packer manifest"
+          }
+
       - name: Remove dpiAware from manifest
         shell: pwsh
         if: env.UPLOAD_ARTIFACT == 'true'
