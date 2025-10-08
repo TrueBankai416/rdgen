@@ -292,7 +292,21 @@ jobs:
             Write-Host "Created new trustInfo with requireAdministrator"
           }
           
-          $manifest.Save($manifestPath)
+          # Save with UTF-8 without BOM
+          $settings = New-Object System.Xml.XmlWriterSettings
+          $settings.Indent = $true
+          $settings.IndentChars = "  "
+          $settings.NewLineChars = "`r`n"
+          $settings.NewLineHandling = [System.Xml.NewLineHandling]::Replace
+          $settings.Encoding = New-Object System.Text.UTF8Encoding($false)
+          $settings.OmitXmlDeclaration = $false
+          
+          $writer = [System.Xml.XmlWriter]::Create($manifestPath, $settings)
+          try {
+            $manifest.Save($writer)
+          } finally {
+            $writer.Close()
+          }
 
       - name: Install LLVM and Clang
         uses: rustdesk-org/install-llvm-action-32bit@master
@@ -501,7 +515,23 @@ jobs:
           $dpiNode = $manifest.SelectSingleNode("//*[local-name()='dpiAware']")
           if ($dpiNode) {
             $dpiNode.ParentNode.RemoveChild($dpiNode) | Out-Null
-            $manifest.Save($manifestPath)
+            
+            # Save with UTF-8 without BOM
+            $settings = New-Object System.Xml.XmlWriterSettings
+            $settings.Indent = $true
+            $settings.IndentChars = "  "
+            $settings.NewLineChars = "`r`n"
+            $settings.NewLineHandling = [System.Xml.NewLineHandling]::Replace
+            $settings.Encoding = New-Object System.Text.UTF8Encoding($false)
+            $settings.OmitXmlDeclaration = $false
+            
+            $writer = [System.Xml.XmlWriter]::Create($manifestPath, $settings)
+            try {
+              $manifest.Save($writer)
+            } finally {
+              $writer.Close()
+            }
+            
             Write-Host "Removed dpiAware from manifest"
           }
 
