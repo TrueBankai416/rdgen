@@ -455,14 +455,26 @@ jobs:
             } else {
               # Create requestedExecutionLevel within existing trustInfo
               $ns = $trustInfo.NamespaceURI
-              $security = $manifest.CreateElement("security", $ns)
-              $requestedPrivileges = $manifest.CreateElement("requestedPrivileges", $ns)
+              
+              # Check if security element exists, reuse if present
+              $security = $trustInfo.SelectSingleNode(".//*[local-name()='security']")
+              if (-not $security) {
+                $security = $manifest.CreateElement("security", $ns)
+                $trustInfo.AppendChild($security) | Out-Null
+              }
+              
+              # Check if requestedPrivileges exists, reuse if present
+              $requestedPrivileges = $security.SelectSingleNode(".//*[local-name()='requestedPrivileges']")
+              if (-not $requestedPrivileges) {
+                $requestedPrivileges = $manifest.CreateElement("requestedPrivileges", $ns)
+                $security.AppendChild($requestedPrivileges) | Out-Null
+              }
+              
+              # Create requestedExecutionLevel
               $requestedExecutionLevel = $manifest.CreateElement("requestedExecutionLevel", $ns)
               $requestedExecutionLevel.SetAttribute("level", "requireAdministrator")
               $requestedExecutionLevel.SetAttribute("uiAccess", "false")
               $requestedPrivileges.AppendChild($requestedExecutionLevel) | Out-Null
-              $security.AppendChild($requestedPrivileges) | Out-Null
-              $trustInfo.AppendChild($security) | Out-Null
               Write-Host "Added requestedExecutionLevel to existing trustInfo"
             }
           } else {
@@ -489,12 +501,13 @@ jobs:
             Write-Host "Created new trustInfo with requireAdministrator"
           }
           
-          # Save with proper formatting and encoding
+          # Save with proper formatting and encoding (UTF-8 without BOM)
           $settings = New-Object System.Xml.XmlWriterSettings
           $settings.Indent = $true
           $settings.IndentChars = "  "
           $settings.NewLineChars = "`r`n"
-          $settings.Encoding = [System.Text.Encoding]::UTF8
+          $settings.NewLineHandling = [System.Xml.NewLineHandling]::Replace
+          $settings.Encoding = New-Object System.Text.UTF8Encoding($false)  # UTF-8 without BOM
           $settings.OmitXmlDeclaration = $false
           
           $writer = [System.Xml.XmlWriter]::Create($manifestPath, $settings)
@@ -508,6 +521,15 @@ jobs:
           Write-Host "=== Modified Manifest Content ==="
           Get-Content $manifestPath | Write-Host
           Write-Host "=== End Manifest Content ==="
+          
+          # Validate manifest with mt.exe
+          Write-Host "=== Validating manifest with mt.exe ==="
+          $mtPath = "C:\Program Files (x86)\Windows Kits\10\bin\x64\mt.exe"
+          if (Test-Path $mtPath) {
+            & $mtPath -manifest $manifestPath -validate 2>&1 | Write-Host
+          } else {
+            Write-Host "mt.exe not found at expected path, skipping validation"
+          }
 
       - name: Report Status
         uses: fjogeleit/http-request-action@v1
