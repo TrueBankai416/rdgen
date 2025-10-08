@@ -576,7 +576,10 @@ jobs:
                 if (Test-Path "$targetDir/icon.svg") {
                   Move-Item "$targetDir/icon.svg" "$targetDir/icon.svg.bak" -Force
                 }
+                
                 magick ./res/icon.png "$targetDir/icon.svg"
+                if ($LASTEXITCODE -ne 0) { throw "ImageMagick failed to create icon.svg" }
+                
                 Write-Host "✓ Custom icon processed for Flutter assets"
               } catch {
                 Write-Host "⚠ Failed to process custom icon: $_"
