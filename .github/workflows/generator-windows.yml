@@ -436,16 +436,60 @@ jobs:
       - name: run as admin
         continue-on-error: true
         if: ${{ fromJson(inputs.extras).runasadmin == 'true' }}
-        shell: bash
+        shell: pwsh
         run: |
-          sed -i '/<\/compatibility>/a \
-                <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">\
-                  <security>\
-                    <requestedPrivileges>\
-                      <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>\
-                    </requestedPrivileges>\
-                  </security>\
-                </trustInfo>' ./flutter/windows/runner/runner.exe.manifest
+          $manifestPath = "./flutter/windows/runner/runner.exe.manifest"
+          [xml]$manifest = Get-Content -Raw $manifestPath
+          
+          # Check if trustInfo already exists
+          $trustInfo = $manifest.SelectSingleNode("/*[local-name()='assembly']/*[local-name()='trustInfo']")
+          
+          if ($trustInfo) {
+            # trustInfo exists - update or create requestedExecutionLevel
+            $reqLevel = $trustInfo.SelectSingleNode(".//*[local-name()='requestedExecutionLevel']")
+            if ($reqLevel) {
+              # Update existing requestedExecutionLevel
+              $reqLevel.SetAttribute("level", "requireAdministrator")
+              $reqLevel.SetAttribute("uiAccess", "false")
+              Write-Host "Updated existing requestedExecutionLevel to requireAdministrator"
+            } else {
+              # Create requestedExecutionLevel within existing trustInfo
+              $ns = $trustInfo.NamespaceURI
+              $security = $manifest.CreateElement("security", $ns)
+              $requestedPrivileges = $manifest.CreateElement("requestedPrivileges", $ns)
+              $requestedExecutionLevel = $manifest.CreateElement("requestedExecutionLevel", $ns)
+              $requestedExecutionLevel.SetAttribute("level", "requireAdministrator")
+              $requestedExecutionLevel.SetAttribute("uiAccess", "false")
+              $requestedPrivileges.AppendChild($requestedExecutionLevel) | Out-Null
+              $security.AppendChild($requestedPrivileges) | Out-Null
+              $trustInfo.AppendChild($security) | Out-Null
+              Write-Host "Added requestedExecutionLevel to existing trustInfo"
+            }
+          } else {
+            # Create complete trustInfo structure
+            $ns = "urn:schemas-microsoft-com:asm.v2"
+            $trustInfo = $manifest.CreateElement("trustInfo", $ns)
+            $security = $manifest.CreateElement("security", $ns)
+            $requestedPrivileges = $manifest.CreateElement("requestedPrivileges", $ns)
+            $requestedExecutionLevel = $manifest.CreateElement("requestedExecutionLevel", $ns)
+            $requestedExecutionLevel.SetAttribute("level", "requireAdministrator")
+            $requestedExecutionLevel.SetAttribute("uiAccess", "false")
+            
+            $requestedPrivileges.AppendChild($requestedExecutionLevel) | Out-Null
+            $security.AppendChild($requestedPrivileges) | Out-Null
+            $trustInfo.AppendChild($security) | Out-Null
+            
+            $assembly = $manifest.SelectSingleNode("/*[local-name()='assembly']")
+            $compatibility = $manifest.SelectSingleNode("/*[local-name()='assembly']/*[local-name()='compatibility']")
+            if ($compatibility) {
+              $assembly.InsertAfter($trustInfo, $compatibility) | Out-Null
+            } else {
+              $assembly.AppendChild($trustInfo) | Out-Null
+            }
+            Write-Host "Created new trustInfo with requireAdministrator"
+          }
+          
+          $manifest.Save($manifestPath)
 
       - name: Report Status
         uses: fjogeleit/http-request-action@v1
@@ -593,12 +637,82 @@ jobs:
         run: |
           echo -n "${{ inputs.custom }}" | cat > ./rustdesk/custom.txt
 
+      - name: Add run as admin to portable packer manifest
+        continue-on-error: true
+        if: ${{ fromJson(inputs.extras).runasadmin == 'true' }}
+        shell: pwsh
+        run: |
+          $manifestPath = "res/manifest.xml"
+          [xml]$manifest = Get-Content -Raw $manifestPath
+          
+          # Check if trustInfo already exists
+          $trustInfo = $manifest.SelectSingleNode("/*[local-name()='assembly']/*[local-name()='trustInfo']")
+          
+          if ($trustInfo) {
+            # trustInfo exists - update or create requestedExecutionLevel
+            $reqLevel = $trustInfo.SelectSingleNode(".//*[local-name()='requestedExecutionLevel']")
+            if ($reqLevel) {
+              # Update existing requestedExecutionLevel
+              $reqLevel.SetAttribute("level", "requireAdministrator")
+              $reqLevel.SetAttribute("uiAccess", "false")
+              Write-Host "Updated existing requestedExecutionLevel in portable packer manifest"
+            } else {
+              # Create requestedExecutionLevel within existing trustInfo
+              $ns = $trustInfo.NamespaceURI
+              $security = $manifest.CreateElement("security", $ns)
+              $requestedPrivileges = $manifest.CreateElement("requestedPrivileges", $ns)
+              $requestedExecutionLevel = $manifest.CreateElement("requestedExecutionLevel", $ns)
+              $requestedExecutionLevel.SetAttribute("level", "requireAdministrator")
+              $requestedExecutionLevel.SetAttribute("uiAccess", "false")
+              $requestedPrivileges.AppendChild($requestedExecutionLevel) | Out-Null
+              $security.AppendChild($requestedPrivileges) | Out-Null
+              $trustInfo.AppendChild($security) | Out-Null
+              Write-Host "Added requestedExecutionLevel to existing trustInfo in portable packer manifest"
+            }
+          } else {
+            # Create complete trustInfo structure
+            $ns = "urn:schemas-microsoft-com:asm.v2"
+            $trustInfo = $manifest.CreateElement("trustInfo", $ns)
+            $security = $manifest.CreateElement("security", $ns)
+            $requestedPrivileges = $manifest.CreateElement("requestedPrivileges", $ns)
+            $requestedExecutionLevel = $manifest.CreateElement("requestedExecutionLevel", $ns)
+            $requestedExecutionLevel.SetAttribute("level", "requireAdministrator")
+            $requestedExecutionLevel.SetAttribute("uiAccess", "false")
+            
+            $requestedPrivileges.AppendChild($requestedExecutionLevel) | Out-Null
+            $security.AppendChild($requestedPrivileges) | Out-Null
+            $trustInfo.AppendChild($security) | Out-Null
+            
+            $assembly = $manifest.SelectSingleNode("/*[local-name()='assembly']")
+            $compatibility = $manifest.SelectSingleNode("/*[local-name()='assembly']/*[local-name()='compatibility']")
+            if ($compatibility) {
+              $assembly.InsertAfter($trustInfo, $compatibility) | Out-Null
+            } else {
+              $assembly.AppendChild($trustInfo) | Out-Null
+            }
+            Write-Host "Created new trustInfo in portable packer manifest"
+          }
+          
+          $manifest.Save($manifestPath)
+
+      - name: Remove dpiAware from manifest
+        shell: pwsh
+        if: env.UPLOAD_ARTIFACT == 'true'
+        run: |
+          $manifestPath = "res/manifest.xml"
+          [xml]$manifest = Get-Content -Raw $manifestPath
+          $dpiNode = $manifest.SelectSingleNode("//*[local-name()='dpiAware']")
+          if ($dpiNode) {
+            $dpiNode.ParentNode.RemoveChild($dpiNode) | Out-Null
+            $manifest.Save($manifestPath)
+            Write-Host "Removed dpiAware from manifest"
+          }
+
       - name: Build self-extracted executable
         shell: bash
         if: env.UPLOAD_ARTIFACT == 'true'
         run: |
           mv "./rustdesk/rustdesk.exe" "./rustdesk/${{ inputs.appname }}.exe" || echo "rustdesk.exe"
-          sed -i '/dpiAware/d' res/manifest.xml
           pushd ./libs/portable
           pip3 install -r requirements.txt
           python3 ./generate.py -f ../../rustdesk/ -o . -e "../../rustdesk/${{ inputs.appname }}.exe"
