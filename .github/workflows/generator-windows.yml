@@ -330,7 +330,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          prefix-key: ${{ matrix.job.os }}
+          prefix-key: ${{ matrix.job.os }}-${{ env.VERSION }}
+          shared-key: "rustdesk-${{ matrix.job.target }}"
+          cache-on-failure: true
         
       - name: Report Status
         uses: fjogeleit/http-request-action@v1
@@ -347,6 +349,8 @@ jobs:
           vcpkgDirectory: C:\vcpkg
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
           doNotCache: false
+        env:
+          VCPKG_FEATURE_FLAGS: manifests,binarycaching
 
       - name: Install vcpkg dependencies
         env:
@@ -368,30 +372,82 @@ jobs:
           head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log" || true
         shell: bash
 
-      - name: icon stuff
+      - name: Process custom icons
         if: ${{ inputs.iconlink != 'false' }}
         continue-on-error: true
-        shell: bash
+        shell: pwsh
+        env:
+          ICON_JSON: ${{ inputs.iconlink }}
         run: |
-          mv ./res/icon.ico ./res/icon.ico.bak
-          mv ./res/icon.png ./res/icon.png.bak
-          mv ./res/tray-icon.ico ./res/tray-icon.ico.bak
-
-      - name: magick stuff
-        if: ${{ inputs.iconlink != 'false' }}
-        continue-on-error: true
-        run: |
-          Invoke-WebRequest -Uri ${{ fromJson(inputs.iconlink).url }}/get_png?filename=${{ fromJson(inputs.iconlink).file }}"&"uuid=${{ fromJson(inputs.iconlink).uuid }} -OutFile ./res/icon.png 
-          mv ./res/32x32.png ./res/32x32.png.bak
-          mv ./res/64x64.png ./res/64x64.png.bak
-          mv ./res/128x128.png ./res/128x128.png.bak
-          mv ./res/128x128@2x.png ./res/128x128@2x.png.bak
-          magick ./res/icon.png -define icon:auto-resize=256,64,48,32,16 ./res/icon.ico
-          cp ./res/icon.ico ./res/tray-icon.ico
-          magick ./res/icon.png -resize 32x32 ./res/32x32.png
-          magick ./res/icon.png -resize 64x64 ./res/64x64.png
-          magick ./res/icon.png -resize 128x128 ./res/128x128.png
-          magick ./res/128x128.png -resize 200% ./res/128x128@2x.png
+          try {
+            # Parse icon configuration
+            $icon = $env:ICON_JSON | ConvertFrom-Json
+            
+            # Download new icon first (before backing up originals)
+            $iconUrl = "$($icon.url)/get_png?filename=$($icon.file)&uuid=$($icon.uuid)"
+            $tempIcon = "./res/icon.png.tmp"
+            Invoke-WebRequest -Uri $iconUrl -OutFile $tempIcon
+            
+            # Backup original icons only after successful download
+            $iconFiles = @(
+              "./res/icon.ico",
+              "./res/icon.png", 
+              "./res/tray-icon.ico",
+              "./res/32x32.png",
+              "./res/64x64.png",
+              "./res/128x128.png",
+              "./res/128x128@2x.png"
+            )
+            foreach ($file in $iconFiles) {
+              if (Test-Path $file) {
+                Move-Item $file "$file.bak" -Force
+              }
+            }
+            
+            # Move downloaded icon to final location
+            Move-Item $tempIcon ./res/icon.png -Force
+            
+            # Generate all icon sizes
+            magick ./res/icon.png -define icon:auto-resize=256,64,48,32,16 ./res/icon.ico
+            if ($LASTEXITCODE -ne 0) { throw "ImageMagick failed to create icon.ico" }
+            
+            Copy-Item ./res/icon.ico ./res/tray-icon.ico
+            
+            magick ./res/icon.png -resize 32x32 ./res/32x32.png
+            if ($LASTEXITCODE -ne 0) { throw "ImageMagick failed to create 32x32.png" }
+            
+            magick ./res/icon.png -resize 64x64 ./res/64x64.png
+            if ($LASTEXITCODE -ne 0) { throw "ImageMagick failed to create 64x64.png" }
+            
+            magick ./res/icon.png -resize 128x128 ./res/128x128.png
+            if ($LASTEXITCODE -ne 0) { throw "ImageMagick failed to create 128x128.png" }
+            
+            magick ./res/128x128.png -resize 200% ./res/128x128@2x.png
+            if ($LASTEXITCODE -ne 0) { throw "ImageMagick failed to create 128x128@2x.png" }
+            
+            Write-Host "✓ Custom icons processed successfully"
+          } catch {
+            Write-Host "⚠ Failed to process custom icons: $_"
+            
+            # Restore original icons if they were backed up
+            $iconFiles = @(
+              "./res/icon.ico",
+              "./res/icon.png", 
+              "./res/tray-icon.ico",
+              "./res/32x32.png",
+              "./res/64x64.png",
+              "./res/128x128.png",
+              "./res/128x128@2x.png"
+            )
+            foreach ($file in $iconFiles) {
+              if (Test-Path "$file.bak") {
+                Move-Item "$file.bak" $file -Force
+                Write-Host "  Restored $file from backup"
+              }
+            }
+            
+            throw
+          }
 
 
       - name: ui.rs icon
@@ -501,18 +557,56 @@ jobs:
               Write-Host "Ingore the printer driver error."
           }
 
-      - name: icon stuff
-        if: ${{ inputs.iconlink != 'false' }}
-        continue-on-error: true
+      - name: Process Flutter assets (icons and logos)
+        shell: pwsh
+        env:
+          ICON_JSON: ${{ inputs.iconlink }}
+          LOGO_JSON: ${{ inputs.logolink }}
         run: |
-          mv ./rustdesk/data/flutter_assets/assets/icon.svg ./rustdesk/data/flutter_assets/assets/icon.svg.bak
-          magick ./res/icon.png ./rustdesk/data/flutter_assets/assets/icon.svg
-
-      - name: logo stuff
-        if: ${{ inputs.logolink != 'false' }}
-        continue-on-error: true
-        run: |
-          Invoke-WebRequest -Uri ${{ fromJson(inputs.logolink).url }}/get_png?filename=${{ fromJson(inputs.logolink).file }}"&"uuid=${{ fromJson(inputs.logolink).uuid }} -OutFile ./rustdesk/data/flutter_assets/assets/logo.png
+          # Process custom icon
+          if ($env:ICON_JSON -and $env:ICON_JSON -ne "false") {
+            if (Test-Path ./res/icon.png) {
+              try {
+                # Ensure target directory exists
+                $targetDir = "./rustdesk/data/flutter_assets/assets"
+                if (-not (Test-Path $targetDir)) {
+                  New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+                }
+                
+                if (Test-Path "$targetDir/icon.svg") {
+                  Move-Item "$targetDir/icon.svg" "$targetDir/icon.svg.bak" -Force
+                }
+                
+                magick ./res/icon.png "$targetDir/icon.svg"
+                if ($LASTEXITCODE -ne 0) { throw "ImageMagick failed to create icon.svg" }
+                
+                Write-Host "✓ Custom icon processed for Flutter assets"
+              } catch {
+                Write-Host "⚠ Failed to process custom icon: $_"
+              }
+            } else {
+              Write-Host "⚠ Icon file not found at ./res/icon.png"
+            }
+          }
+          
+          # Process custom logo
+          if ($env:LOGO_JSON -and $env:LOGO_JSON -ne "false") {
+            try {
+              $logo = $env:LOGO_JSON | ConvertFrom-Json
+              $logoUrl = "$($logo.url)/get_png?filename=$($logo.file)&uuid=$($logo.uuid)"
+              
+              # Ensure target directory exists
+              $targetDir = "./rustdesk/data/flutter_assets/assets"
+              if (-not (Test-Path $targetDir)) {
+                New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+              }
+              
+              Invoke-WebRequest -Uri $logoUrl -OutFile "$targetDir/logo.png"
+              Write-Host "✓ Custom logo downloaded"
+            } catch {
+              Write-Host "⚠ Failed to download custom logo: $_"
+            }
+          }
 
       - name: find Runner.res
         # Windows: find Runner.res (compiled from ./flutter/windows/runner/Runner.rc), copy to ./Runner.res
@@ -546,33 +640,51 @@ jobs:
           customHeaders: '{"Content-Type": "application/json"}'
           data: '{"uuid": "${{ inputs.uuid }}", "status": "70% complete, this step takes about 5 minutes, be patient."}'
       
-      - name: zip dlls
-        continue-on-error: true
+      - name: Sign DLLs and EXEs
         shell: pwsh
+        env:
+          SIGN_BASE_URL: ${{ secrets.SIGN_BASE_URL }}
+          SIGN_API_KEY: ${{ secrets.SIGN_API_KEY }}
         run: |
-          Compress-Archive -Path ./rustdesk/*.dll, ./rustdesk/*.exe -DestinationPath ./rustdesk/unsigned_files.zip -CompressionLevel Fastest
-
-      - name: sign dlls
-        continue-on-error: true
-        shell: bash
-        run: |
-          if [ ! -z "${{ secrets.SIGN_BASE_URL }}" ] && [ ! -z "${{ secrets.SIGN_API_KEY }}" ]; then
-            curl -X POST -F "file=@./rustdesk/unsigned_files.zip" \
-              -H "X-API-KEY: ${{ secrets.SIGN_API_KEY }}" \
-              -m 900 \
-              "${{ secrets.SIGN_BASE_URL }}/sign/" -o ./rustdesk/signed_files.zip
-          else
-            echo "Signing skipped - signing URL or API key not configured"
-            cp ./rustdesk/unsigned_files.zip ./rustdesk/signed_files.zip
-          fi
-
-      - name: unzip dlls
-        continue-on-error: true
-        shell: pwsh
-        run: |
+          # Collect files for signing
+          Write-Host "Collecting files for signing..."
+          $files = @(Get-ChildItem -Path ./rustdesk/*.dll, ./rustdesk/*.exe -File -ErrorAction SilentlyContinue)
+          if ($files.Count -eq 0) {
+            Write-Host "⚠ No DLL/EXE files found to sign, skipping..."
+            exit 0
+          }
+          
+          # Zip files for signing
+          Write-Host "Compressing $($files.Count) files for signing..."
+          Compress-Archive -Path $files.FullName -DestinationPath ./rustdesk/unsigned_files.zip -CompressionLevel Fastest
+          
+          # Sign files if credentials are available
+          if ($env:SIGN_BASE_URL -and $env:SIGN_API_KEY) {
+            Write-Host "Sending files for code signing..."
+            try {
+              $response = Invoke-WebRequest -Uri "$env:SIGN_BASE_URL/sign/" `
+                -Method Post `
+                -Headers @{"X-API-KEY"="$env:SIGN_API_KEY"} `
+                -Form @{file=Get-Item -Path ./rustdesk/unsigned_files.zip} `
+                -OutFile ./rustdesk/signed_files.zip `
+                -TimeoutSec 900 `
+                -PassThru
+              Write-Host "✓ Files signed successfully"
+            } catch {
+              Write-Host "⚠ Signing failed: $_"
+              Write-Host "Continuing with unsigned files..."
+              Copy-Item ./rustdesk/unsigned_files.zip ./rustdesk/signed_files.zip
+            }
+          } else {
+            Write-Host "⚠ Signing credentials not configured, using unsigned files"
+            Copy-Item ./rustdesk/unsigned_files.zip ./rustdesk/signed_files.zip
+          }
+          
+          # Extract signed files
+          Write-Host "Extracting signed files..."
           Expand-Archive -Path ./rustdesk/signed_files.zip -DestinationPath ./rustdesk/ -Force
-          Remove-Item ./rustdesk/unsigned_files.zip
-          Remove-Item ./rustdesk/signed_files.zip
+          Remove-Item ./rustdesk/unsigned_files.zip, ./rustdesk/signed_files.zip
+          Write-Host "✓ DLL/EXE signing process complete"
 
       - name: Create custom.txt file
         shell: bash
@@ -646,33 +758,51 @@ jobs:
           customHeaders: '{"Content-Type": "application/json"}'
           data: '{"uuid": "${{ inputs.uuid }}", "status": "85% complete"}'
 
-      - name: zip exe and msi
-        continue-on-error: true
+      - name: Sign final EXE and MSI
         shell: pwsh
+        env:
+          SIGN_BASE_URL: ${{ secrets.SIGN_BASE_URL }}
+          SIGN_API_KEY: ${{ secrets.SIGN_API_KEY }}
         run: |
-          Compress-Archive -Path ./SignOutput/*.exe, ./SignOutput/*.msi -DestinationPath ./SignOutput/unsigned_files.zip -CompressionLevel Fastest
-
-      - name: sign exe and msi
-        continue-on-error: true
-        shell: bash
-        run: |
-          if [ ! -z "${{ secrets.SIGN_BASE_URL }}" ] && [ ! -z "${{ secrets.SIGN_API_KEY }}" ]; then
-            curl -X POST -F "file=@./SignOutput/unsigned_files.zip" \
-              -H "X-API-KEY: ${{ secrets.SIGN_API_KEY }}" \
-              -m 900 \
-              "${{ secrets.SIGN_BASE_URL }}/sign/" -o ./SignOutput/signed_files.zip
-          else
-            echo "Signing skipped - signing URL or API key not configured"
-            cp ./SignOutput/unsigned_files.zip ./SignOutput/signed_files.zip
-          fi
-
-      - name: unzip exe and msi
-        continue-on-error: true
-        shell: pwsh
-        run: |
+          # Collect installer files for signing
+          Write-Host "Collecting installer files for signing..."
+          $files = @(Get-ChildItem -Path ./SignOutput/*.exe, ./SignOutput/*.msi -File -ErrorAction SilentlyContinue)
+          if ($files.Count -eq 0) {
+            Write-Host "⚠ No installer files found to sign, skipping..."
+            exit 0
+          }
+          
+          # Zip files for signing
+          Write-Host "Compressing $($files.Count) installer files for signing..."
+          Compress-Archive -Path $files.FullName -DestinationPath ./SignOutput/unsigned_files.zip -CompressionLevel Fastest
+          
+          # Sign files if credentials are available
+          if ($env:SIGN_BASE_URL -and $env:SIGN_API_KEY) {
+            Write-Host "Sending installer files for code signing..."
+            try {
+              $response = Invoke-WebRequest -Uri "$env:SIGN_BASE_URL/sign/" `
+                -Method Post `
+                -Headers @{"X-API-KEY"="$env:SIGN_API_KEY"} `
+                -Form @{file=Get-Item -Path ./SignOutput/unsigned_files.zip} `
+                -OutFile ./SignOutput/signed_files.zip `
+                -TimeoutSec 900 `
+                -PassThru
+              Write-Host "✓ Installer files signed successfully"
+            } catch {
+              Write-Host "⚠ Signing failed: $_"
+              Write-Host "Continuing with unsigned files..."
+              Copy-Item ./SignOutput/unsigned_files.zip ./SignOutput/signed_files.zip
+            }
+          } else {
+            Write-Host "⚠ Signing credentials not configured, using unsigned files"
+            Copy-Item ./SignOutput/unsigned_files.zip ./SignOutput/signed_files.zip
+          }
+          
+          # Extract signed files
+          Write-Host "Extracting signed installer files..."
           Expand-Archive -Path ./SignOutput/signed_files.zip -DestinationPath ./SignOutput/ -Force
-          Remove-Item ./SignOutput/unsigned_files.zip
-          Remove-Item ./SignOutput/signed_files.zip
+          Remove-Item ./SignOutput/unsigned_files.zip, ./SignOutput/signed_files.zip
+          Write-Host "✓ Installer signing process complete"
 
       - name: rename rustdesk.exe to filename-x64.exe
         run: |
