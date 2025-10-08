@@ -242,27 +242,38 @@ jobs:
         shell: pwsh
         run: |
           $manifestPath = "./res/manifest.xml"
-          [xml]$manifest = Get-Content $manifestPath
+          [xml]$manifest = Get-Content -Raw $manifestPath
           
-          # Create trustInfo element
-          $trustInfo = $manifest.CreateElement("trustInfo", "urn:schemas-microsoft-com:asm.v2")
-          $security = $manifest.CreateElement("security")
-          $requestedPrivileges = $manifest.CreateElement("requestedPrivileges")
-          $requestedExecutionLevel = $manifest.CreateElement("requestedExecutionLevel")
-          $requestedExecutionLevel.SetAttribute("level", "requireAdministrator")
-          $requestedExecutionLevel.SetAttribute("uiAccess", "false")
-          
-          # Build the hierarchy
-          $requestedPrivileges.AppendChild($requestedExecutionLevel) | Out-Null
-          $security.AppendChild($requestedPrivileges) | Out-Null
-          $trustInfo.AppendChild($security) | Out-Null
-          
-          # Insert after compatibility element
-          $compatibility = $manifest.assembly.compatibility
-          $manifest.assembly.InsertAfter($trustInfo, $compatibility) | Out-Null
-          
-          # Save with proper formatting
-          $manifest.Save($manifestPath)
+          # Only add trustInfo if it doesn't already exist
+          if (-not $manifest.assembly.trustInfo) {
+            # Create trustInfo element with proper namespace
+            $ns = "urn:schemas-microsoft-com:asm.v2"
+            $trustInfo = $manifest.CreateElement("trustInfo", $ns)
+            $security = $manifest.CreateElement("security", $ns)
+            $requestedPrivileges = $manifest.CreateElement("requestedPrivileges", $ns)
+            $requestedExecutionLevel = $manifest.CreateElement("requestedExecutionLevel", $ns)
+            $requestedExecutionLevel.SetAttribute("level", "requireAdministrator")
+            $requestedExecutionLevel.SetAttribute("uiAccess", "false")
+            
+            # Build the hierarchy
+            $requestedPrivileges.AppendChild($requestedExecutionLevel) | Out-Null
+            $security.AppendChild($requestedPrivileges) | Out-Null
+            $trustInfo.AppendChild($security) | Out-Null
+            
+            # Insert after compatibility element
+            $compatibility = $manifest.assembly.compatibility
+            if ($compatibility) {
+              $manifest.assembly.InsertAfter($trustInfo, $compatibility) | Out-Null
+            } else {
+              $manifest.assembly.AppendChild($trustInfo) | Out-Null
+            }
+            
+            # Save with proper formatting
+            $manifest.Save($manifestPath)
+            Write-Host "Added trustInfo to manifest"
+          } else {
+            Write-Host "trustInfo already exists in manifest"
+          }
 
       - name: Install LLVM and Clang
         uses: rustdesk-org/install-llvm-action-32bit@master
@@ -463,11 +474,22 @@ jobs:
         run: |
           echo -n "${{ inputs.custom }}" | cat > ./Release/custom.txt
 
+      - name: Remove dpiAware from manifest
+        shell: pwsh
+        run: |
+          $manifestPath = "res/manifest.xml"
+          [xml]$manifest = Get-Content -Raw $manifestPath
+          $dpiNode = $manifest.SelectSingleNode("//*[local-name()='dpiAware']")
+          if ($dpiNode) {
+            $dpiNode.ParentNode.RemoveChild($dpiNode) | Out-Null
+            $manifest.Save($manifestPath)
+            Write-Host "Removed dpiAware from manifest"
+          }
+
       - name: Build self-extracted executable
         shell: bash
         run: |
           mv "./Release/rustdesk.exe" "./Release/${{ inputs.appname }}.exe" || echo "rustdesk.exe"
-          sed -i '/dpiAware/d' res/manifest.xml
           pushd ./libs/portable
           pip3 install -r requirements.txt
           python3 ./generate.py -f ../../Release/ -o . -e "../../Release/${{ inputs.appname }}.exe"
