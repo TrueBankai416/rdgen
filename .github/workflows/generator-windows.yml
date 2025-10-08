@@ -412,10 +412,18 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "ImageMagick failed to create icon.ico" }
             
             Copy-Item ./res/icon.ico ./res/tray-icon.ico
+            
             magick ./res/icon.png -resize 32x32 ./res/32x32.png
+            if ($LASTEXITCODE -ne 0) { throw "ImageMagick failed to create 32x32.png" }
+            
             magick ./res/icon.png -resize 64x64 ./res/64x64.png
+            if ($LASTEXITCODE -ne 0) { throw "ImageMagick failed to create 64x64.png" }
+            
             magick ./res/icon.png -resize 128x128 ./res/128x128.png
+            if ($LASTEXITCODE -ne 0) { throw "ImageMagick failed to create 128x128.png" }
+            
             magick ./res/128x128.png -resize 200% ./res/128x128@2x.png
+            if ($LASTEXITCODE -ne 0) { throw "ImageMagick failed to create 128x128@2x.png" }
             
             Write-Host "✓ Custom icons processed successfully"
           } catch {
@@ -631,6 +639,9 @@ jobs:
       
       - name: Sign DLLs and EXEs
         shell: pwsh
+        env:
+          SIGN_BASE_URL: ${{ secrets.SIGN_BASE_URL }}
+          SIGN_API_KEY: ${{ secrets.SIGN_API_KEY }}
         run: |
           # Collect files for signing
           Write-Host "Collecting files for signing..."
@@ -645,12 +656,12 @@ jobs:
           Compress-Archive -Path $files.FullName -DestinationPath ./rustdesk/unsigned_files.zip -CompressionLevel Fastest
           
           # Sign files if credentials are available
-          if ("${{ secrets.SIGN_BASE_URL }}" -and "${{ secrets.SIGN_API_KEY }}") {
+          if ($env:SIGN_BASE_URL -and $env:SIGN_API_KEY) {
             Write-Host "Sending files for code signing..."
             try {
-              $response = Invoke-WebRequest -Uri "${{ secrets.SIGN_BASE_URL }}/sign/" `
+              $response = Invoke-WebRequest -Uri "$env:SIGN_BASE_URL/sign/" `
                 -Method Post `
-                -Headers @{"X-API-KEY"="${{ secrets.SIGN_API_KEY }}"} `
+                -Headers @{"X-API-KEY"="$env:SIGN_API_KEY"} `
                 -Form @{file=Get-Item -Path ./rustdesk/unsigned_files.zip} `
                 -OutFile ./rustdesk/signed_files.zip `
                 -TimeoutSec 900 `
@@ -746,6 +757,9 @@ jobs:
 
       - name: Sign final EXE and MSI
         shell: pwsh
+        env:
+          SIGN_BASE_URL: ${{ secrets.SIGN_BASE_URL }}
+          SIGN_API_KEY: ${{ secrets.SIGN_API_KEY }}
         run: |
           # Collect installer files for signing
           Write-Host "Collecting installer files for signing..."
@@ -760,12 +774,12 @@ jobs:
           Compress-Archive -Path $files.FullName -DestinationPath ./SignOutput/unsigned_files.zip -CompressionLevel Fastest
           
           # Sign files if credentials are available
-          if ("${{ secrets.SIGN_BASE_URL }}" -and "${{ secrets.SIGN_API_KEY }}") {
+          if ($env:SIGN_BASE_URL -and $env:SIGN_API_KEY) {
             Write-Host "Sending installer files for code signing..."
             try {
-              $response = Invoke-WebRequest -Uri "${{ secrets.SIGN_BASE_URL }}/sign/" `
+              $response = Invoke-WebRequest -Uri "$env:SIGN_BASE_URL/sign/" `
                 -Method Post `
-                -Headers @{"X-API-KEY"="${{ secrets.SIGN_API_KEY }}"} `
+                -Headers @{"X-API-KEY"="$env:SIGN_API_KEY"} `
                 -Form @{file=Get-Item -Path ./SignOutput/unsigned_files.zip} `
                 -OutFile ./SignOutput/signed_files.zip `
                 -TimeoutSec 900 `
