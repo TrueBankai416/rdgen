@@ -520,10 +520,16 @@ jobs:
         run: |
           # Process custom icon
           if ("${{ inputs.iconlink }}" -ne "false" -and (Test-Path ./res/icon.png)) {
-            if (Test-Path ./rustdesk/data/flutter_assets/assets/icon.svg) {
-              Move-Item ./rustdesk/data/flutter_assets/assets/icon.svg ./rustdesk/data/flutter_assets/assets/icon.svg.bak -Force
+            # Ensure target directory exists
+            $targetDir = "./rustdesk/data/flutter_assets/assets"
+            if (-not (Test-Path $targetDir)) {
+              New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
             }
-            magick ./res/icon.png ./rustdesk/data/flutter_assets/assets/icon.svg
+            
+            if (Test-Path "$targetDir/icon.svg") {
+              Move-Item "$targetDir/icon.svg" "$targetDir/icon.svg.bak" -Force
+            }
+            magick ./res/icon.png "$targetDir/icon.svg"
             Write-Host "✓ Custom icon processed for Flutter assets"
           }
           
@@ -573,9 +579,17 @@ jobs:
       - name: Sign DLLs and EXEs
         shell: pwsh
         run: |
+          # Collect files for signing
+          Write-Host "Collecting files for signing..."
+          $files = Get-ChildItem ./rustdesk -Include *.dll,*.exe -File
+          if (-not $files) {
+            Write-Host "⚠ No DLL/EXE files found to sign, skipping..."
+            exit 0
+          }
+          
           # Zip files for signing
-          Write-Host "Compressing files for signing..."
-          Compress-Archive -Path ./rustdesk/*.dll, ./rustdesk/*.exe -DestinationPath ./rustdesk/unsigned_files.zip -CompressionLevel Fastest
+          Write-Host "Compressing $($files.Count) files for signing..."
+          Compress-Archive -Path $files.FullName -DestinationPath ./rustdesk/unsigned_files.zip -CompressionLevel Fastest
           
           # Sign files if credentials are available
           if ("${{ secrets.SIGN_BASE_URL }}" -and "${{ secrets.SIGN_API_KEY }}") {
@@ -680,9 +694,17 @@ jobs:
       - name: Sign final EXE and MSI
         shell: pwsh
         run: |
+          # Collect installer files for signing
+          Write-Host "Collecting installer files for signing..."
+          $files = Get-ChildItem ./SignOutput -Include *.exe,*.msi -File
+          if (-not $files) {
+            Write-Host "⚠ No installer files found to sign, skipping..."
+            exit 0
+          }
+          
           # Zip files for signing
-          Write-Host "Compressing installer files for signing..."
-          Compress-Archive -Path ./SignOutput/*.exe, ./SignOutput/*.msi -DestinationPath ./SignOutput/unsigned_files.zip -CompressionLevel Fastest
+          Write-Host "Compressing $($files.Count) installer files for signing..."
+          Compress-Archive -Path $files.FullName -DestinationPath ./SignOutput/unsigned_files.zip -CompressionLevel Fastest
           
           # Sign files if credentials are available
           if ("${{ secrets.SIGN_BASE_URL }}" -and "${{ secrets.SIGN_API_KEY }}") {
