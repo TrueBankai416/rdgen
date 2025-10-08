@@ -270,7 +270,7 @@ jobs:
             }
           } else {
             # Create complete trustInfo structure
-            $ns = "urn:schemas-microsoft-com:asm.v2"
+            $ns = "urn:schemas-microsoft-com:asm.v3"
             $trustInfo = $manifest.CreateElement("trustInfo", $ns)
             $security = $manifest.CreateElement("security", $ns)
             $requestedPrivileges = $manifest.CreateElement("requestedPrivileges", $ns)
