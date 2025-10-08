@@ -436,16 +436,30 @@ jobs:
       - name: run as admin
         continue-on-error: true
         if: ${{ fromJson(inputs.extras).runasadmin == 'true' }}
-        shell: bash
+        shell: pwsh
         run: |
-          sed -i '/<\/compatibility>/a \
-                <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">\
-                  <security>\
-                    <requestedPrivileges>\
-                      <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>\
-                    </requestedPrivileges>\
-                  </security>\
-                </trustInfo>' ./flutter/windows/runner/runner.exe.manifest
+          $manifestPath = "./flutter/windows/runner/runner.exe.manifest"
+          [xml]$manifest = Get-Content $manifestPath
+          
+          # Create trustInfo element
+          $trustInfo = $manifest.CreateElement("trustInfo", "urn:schemas-microsoft-com:asm.v2")
+          $security = $manifest.CreateElement("security")
+          $requestedPrivileges = $manifest.CreateElement("requestedPrivileges")
+          $requestedExecutionLevel = $manifest.CreateElement("requestedExecutionLevel")
+          $requestedExecutionLevel.SetAttribute("level", "requireAdministrator")
+          $requestedExecutionLevel.SetAttribute("uiAccess", "false")
+          
+          # Build the hierarchy
+          $requestedPrivileges.AppendChild($requestedExecutionLevel) | Out-Null
+          $security.AppendChild($requestedPrivileges) | Out-Null
+          $trustInfo.AppendChild($security) | Out-Null
+          
+          # Insert after compatibility element
+          $compatibility = $manifest.assembly.compatibility
+          $manifest.assembly.InsertAfter($trustInfo, $compatibility) | Out-Null
+          
+          # Save with proper formatting
+          $manifest.Save($manifestPath)
 
       - name: Report Status
         uses: fjogeleit/http-request-action@v1
