@@ -237,10 +237,13 @@ jobs:
             fi
             
             # Escape special characters in replacement string for sed
-            # Escape backslashes first, then ampersands, then forward slashes
+            # Escape backslashes first, then other special characters
             local escaped="${replace//\\/\\\\}"
             escaped="${escaped//&/\\&}"
             escaped="${escaped//\//\\/}"
+            escaped="${escaped//\"/\\\"}"
+            escaped="${escaped//\$/\\$}"
+            escaped="${escaped//\`/\\\`}"
             
             sed -i -e "s|$search|$escaped|g" "$file"
             echo "✓ Updated $file"
