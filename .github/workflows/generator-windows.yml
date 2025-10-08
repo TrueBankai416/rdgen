@@ -230,12 +230,20 @@ jobs:
             local file="$1"
             local search="$2"
             local replace="$3"
-            if [ -f "$file" ]; then
-              sed -i -e "s|$search|$replace|" "$file"
-              echo "✓ Updated $file"
-            else
+            
+            if [ ! -f "$file" ]; then
               echo "⚠ Skipping $file (not found)"
+              return 0
             fi
+            
+            # Escape special characters in replacement string for sed
+            # Escape backslashes first, then ampersands, then forward slashes
+            local escaped="${replace//\\/\\\\}"
+            escaped="${escaped//&/\\&}"
+            escaped="${escaped//\//\\/}"
+            
+            sed -i -e "s|$search|$escaped|g" "$file"
+            echo "✓ Updated $file"
           }
           
           COMPANY="${{ fromJson(inputs.extras).compname }}"
@@ -243,11 +251,10 @@ jobs:
           safe_replace "./flutter/lib/desktop/pages/desktop_setting_page.dart" "Purslane Ltd" "$COMPANY"
           safe_replace "./res/msi/preprocess.py" "PURSLANE" "$COMPANY"
           safe_replace "./res/msi/preprocess.py" "Purslane Ltd" "$COMPANY"
-          safe_replace "./flutter/windows/runner/Runner.rc" "\"Copyright © 2025 Purslane Ltd. All rights reserved.\"" "\"Copyright © 2025 $COMPANY. All rights reserved.\""
           safe_replace "./flutter/windows/runner/Runner.rc" "Purslane Ltd" "$COMPANY"
           safe_replace "./Cargo.toml" "Purslane Ltd" "$COMPANY"
           safe_replace "./libs/portable/Cargo.toml" "Purslane Ltd" "$COMPANY"
-          safe_replace "./res/setup.nsi" "Purslane Ltd." "$COMPANY"
+          safe_replace "./res/setup.nsi" "Purslane Ltd\\." "$COMPANY"
              
       - name: change url to custom
         if: fromJson(inputs.extras).urlLink != 'https://rustdesk.com'
